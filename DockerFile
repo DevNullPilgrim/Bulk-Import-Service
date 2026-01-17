@@ -10,7 +10,6 @@ RUN get-app update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 RUN pip install --no-cashe-dir -r requirements.txt
-
 COPY  app ./app
 COPY  worker ./worker
 COPY  clembic ./clembic
