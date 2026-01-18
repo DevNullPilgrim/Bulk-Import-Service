@@ -15,4 +15,4 @@ class Settings(BaseSettings):
     s3_region: str = 'us-east-1'
 
 
-setting = Settings()
+settings = Settings()
