@@ -1,14 +1,14 @@
 from celery import Celery
 
-from app.core.config import Settings
+from app.core.config import settings
 
-celery = Celery(
+app = Celery(
     'bulk_import',
-    broker=Settings.redis_url,
-    backend=Settings.redis_url,
+    broker=settings.redis_url,
+    backend=settings.redis_url,
 )
 
 
-@celery.task(name='ping')
+@app.task(name='ping')
 def ping():
     return 'pong'

@@ -5,14 +5,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /code
 
-RUN get-app update && apt-get install -y --no-install-recommends \ 
-    curl \ && rm -rf /var/lib/apt/lists*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cashe-dir -r requirements.txt
-COPY  app ./app
-COPY  worker ./worker
-COPY  clembic ./clembic
-COPY clembic.ini ./clembic.ini
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app ./app
+COPY worker ./worker
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
 
 EXPOSE 8000

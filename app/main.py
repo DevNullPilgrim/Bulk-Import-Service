@@ -6,8 +6,8 @@ from fastapi import FastAPI
 from redis import Redis
 from sqlalchemy import text
 
-from core.config import setting
-from db.session import engine
+from app.core.config import settings
+from app.db.session import engine
 
 app = FastAPI(
     title='Bulk Import Service',
@@ -22,7 +22,7 @@ def check_db() -> None:
 
 def check_redis() -> None:
     redis = Redis.from_url(
-        setting.redis_url,
+        settings.redis_url,
         socket_connect_timeout=1,
         socket_timeout=1
     )
@@ -32,12 +32,12 @@ def check_redis() -> None:
 
 def check_s3() -> None:
     s3 = boto3.client(
-        's3',
-        endpoint_url=setting.s3_endpoint_url,
-        aws_acces_key_id=setting.s3_access_key,
-        aws_secret_acces_key=setting.s3_access_key,
-        region_name=setting.s3_region,
-        config=Config(signature_version='s3v4')
+        "s3",
+        endpoint_url=settings.s3_endpoint_url,
+        aws_access_key_id=settings.s3_access_key,
+        aws_secret_access_key=settings.s3_secret_key,
+        region_name=settings.s3_region,
+        config=Config(signature_version="s3v4"),
     )
     s3.list_buckets()
 
