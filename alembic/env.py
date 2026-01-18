@@ -5,6 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 from app.db.base import Base
+import app.models.import_job
 
 config = context.config
 
@@ -36,12 +37,12 @@ def run_migration_online() -> None:
     connectable = engine_from_config(
         configuration,
         prefix='sqlalchemy.',
-        poolckass=pool.NullPool,
+        poolclass=pool.NullPool,
     )
-    with connectable.connect() as connectins:
+    with connectable.connect() as connection:
         context.configure(
-            conenction=connectins,
-            targer_metadata=target_metadata,
+            connection=connection,
+            target_metadata=target_metadata,
             compare_type=True
         )
         with context.begin_transaction():
