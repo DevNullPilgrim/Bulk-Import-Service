@@ -39,7 +39,7 @@ def check_s3() -> None:
         region_name=settings.s3_region,
         config=Config(signature_version="s3v4"),
     )
-    s3.list_buckets()
+    s3.head_bucket(Bucket=settings.s3_bucket)
 
 
 def _run_check(fn: Callable[[], None]) -> str:

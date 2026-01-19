@@ -3,9 +3,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import app.models.import_job
 from app.core.config import settings
 from app.db.base import Base
-import app.models.import_job
 
 config = context.config
 
