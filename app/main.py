@@ -87,7 +87,7 @@ async def create_import(file: UploadFile = File(...),
     return {'id': str(job.id), 'status': job.status}
 
 
-@app.get('/import/{job_id}')
+@app.get('/imports/{job_id}')
 def get_import(job_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
     try:
         job_uuid = uuid.UUID(job_id)
