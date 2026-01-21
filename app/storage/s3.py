@@ -42,16 +42,25 @@ def ensure_bucket(s3, bucket: str) -> None:
 def put_bytes(data: bytes, *, filename: str) -> str:
     safe_name = (filename or 'upload.csv').replace('/', '_').replace('\\', '_')
     key = f'imports/{uuid.uuid4()}_{safe_name}'
+
     s3 = get_s3_client()
-    s3.put_object(Bucket=settings.s3_bucket,
-                  Key=key,
-                  Body=data)
+    ensure_bucket(s3, settings.s3_bucket)
+
+    s3.put_object(
+        Bucket=settings.s3_bucket,
+        Key=key,
+        Body=data,
+    )
+
     return key
 
 
 def get_bytes(key: str) -> bytes:
     s3 = get_s3_client()
+    ensure_bucket(s3, settings.s3_bucket)
+
     obj = s3.get_object(
         Bucket=settings.s3_bucket,
-        Key=key,)
+        Key=key,
+    )
     return obj['Body'].read()

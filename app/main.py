@@ -1,110 +1,98 @@
 import uuid
-from typing import Callable
 
-import boto3
-from botocore.config import Config
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
-from redis import Redis
-from sqlalchemy import text
+import sqlalchemy as sa
+from celery import Celery
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.session import engine, get_db
-from app.models.import_job import ImportJob, JobStatus
+from app.db.session import get_db
+from app.models.import_job import ImportJob, ImportMode, JobStatus
 from app.storage.s3 import put_bytes
-from worker.celery_app import app as celery_app
 
-app = FastAPI(
-    title='Bulk Import Service',
-    version='0.1.0'
+celery_client = Celery(
+    'bulk_import',
+    broker=settings.redis_url,
+    backend=settings.redis_url,
 )
 
-
-def check_db() -> None:
-    with engine.connect() as conn:
-        conn.execute(text('SELECT 1'))
+app = FastAPI(title='Bulk Import Service')
 
 
-def check_redis() -> None:
-    redis = Redis.from_url(
-        settings.redis_url,
-        socket_connect_timeout=1,
-        socket_timeout=1
-    )
-    if not redis.ping():
-        raise RuntimeError('Redis ping failed')
-
-
-def check_s3() -> None:
-    s3 = boto3.client(
-        's3',
-        endpoint_url=settings.s3_endpoint_url,
-        aws_access_key_id=settings.s3_access_key,
-        aws_secret_access_key=settings.s3_secret_key,
-        region_name=settings.s3_region,
-        config=Config(signature_version='s3v4'),
-    )
-    s3.head_bucket(Bucket=settings.s3_bucket)
-
-
-def _run_check(fn: Callable[[], None]) -> str:
-    try:
-        fn()
-        return 'up'
-    except Exception as error:
-        return f'down: {type(error).__name__}: {error}'
+def _job_to_dict(job: ImportJob) -> dict:
+    return {
+        'id': str(job.id),
+        'status': job.status.value if hasattr(job.status, 'value') else str(job.status),
+        'mode': job.mode.value if hasattr(job.mode, 'value') else str(job.mode),
+        'filename': job.filename,
+        'total_rows': job.total_rows,
+        'processed_rows': job.processed_rows,
+        'error': job.error,
+        'created_at': job.created_at.isoformat() if getattr(job, 'created_at', None) else None,
+    }
 
 
 @app.get('/health')
-def health() -> dict[str, object]:
-    checks: dict[str, Callable[[], None]] = {
-        'db': check_db,
-        'redis': check_redis,
-        's3': check_s3,
-    }
-    out = {name: _run_check(fn) for name, fn in checks.items()}
-    ok = all(status == 'up' for status in out.values())
-    return {'ok': ok, **out}
+def health(db: Session = Depends(get_db)) -> dict:
+    # DB check (самая частая причина "connection refused" при старте)
+    try:
+        db.execute(sa.text('SELECT 1'))
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f'db: {type(e).__name__}: {e}',
+        )
+
+    return {'status': 'ok'}
 
 
 @app.post('/imports')
-async def create_import(file: UploadFile = File(...),
-                        db: Session = Depends(get_db),) -> dict[str, object]:
+async def create_import(
+    mode: ImportMode = Query(ImportMode.insert_only),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> dict:
     data = await file.read()
-    filename = file.filename or 'upload.csv'
+    if not data:
+        raise HTTPException(status_code=400, detail='empty file')
 
+    filename = file.filename or 'upload.csv'
     s3_key = put_bytes(data, filename=filename)
+
     job = ImportJob(
         status=JobStatus.pending,
         filename=filename,
-        s3_key=s3_key
+        s3_key=s3_key,
+        total_rows=0,
+        processed_rows=0,
+        mode=mode,
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
-    celery_app.send_task('process_import', args=[str(job.id)])
-    return {'id': str(job.id), 'status': job.status}
+    # важно: имя таски должно совпадать с worker: @app.task(name='process_import')
+    celery_client.send_task('process_import', args=[str(job.id)])
+
+    return jsonable_encoder(_job_to_dict(job))
 
 
 @app.get('/imports/{job_id}')
-def get_import(job_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
+def get_import(job_id: str, db: Session = Depends(get_db)) -> dict:
     try:
         job_uuid = uuid.UUID(job_id)
     except ValueError:
-        raise HTTPException(status_code=422, detail='Invalid job_id')
+        raise HTTPException(status_code=404, detail='not found')
 
     job = db.get(ImportJob, job_uuid)
-    if not job:
-        raise HTTPException(status_code=404, detail='Import job not found')
+    if job is None:
+        raise HTTPException(status_code=404, detail='not found')
 
-    return {
-        'id': str(job.id),
-        'status': job.status,
-        'filename': job.filename,
-        's3_key': job.s3_key,
-        'total_rows': job.total_rows,
-        'processed_rows': job.processed_rows,
-        'error': job.error,
-        'created_at': job.created_at,
-    }
+    return jsonable_encoder(_job_to_dict(job))
+
+
+# (опционально) временный алиас, чтобы не ломать старые запросы
+@app.get('/import/{job_id}', include_in_schema=False)
+def get_import_alias(job_id: str, db: Session = Depends(get_db)) -> dict:
+    return get_import(job_id, db)

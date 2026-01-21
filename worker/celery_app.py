@@ -1,17 +1,20 @@
 import csv
-import time
 import io
 import os
+import time
 import uuid
-from typing import Iterable, Iterator
+from typing import Iterator
 
+import sqlalchemy as sa
 from celery import Celery
 from celery.utils.log import get_task_logger
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.import_job import ImportJob, JobStatus
+from app.models.customer import Customer
+from app.models.import_job import ImportJob, ImportMode, JobStatus
 from app.storage.s3 import get_bytes
 
 app = Celery(
@@ -22,9 +25,9 @@ app = Celery(
 
 logger = get_task_logger(__name__)
 
-# обновлять processed_rows каждые N строк
-PROGRESS_EVERY = 50
-SLOW_MS = int(os.getenv("IMPORT_SLOW_MS", "0"))
+PROGRESS_EVERY = int(os.getenv('PROGRESS_EVERY', '50'))
+BATCH_SIZE = int(os.getenv('BATCH_SIZE', '500'))
+SLOW_MS = int(os.getenv('IMPORT_SLOW_MS', '0'))
 
 
 @app.task(name='ping')
@@ -32,33 +35,20 @@ def ping():
     return 'pong'
 
 
-def _csv_reader(data: bytes) -> Iterator[list[str]]:
-    text = io.TextIOWrapper(
+def iter_csv_rows(data: bytes) -> Iterator[list[str]]:
+    with io.TextIOWrapper(
         io.BytesIO(data),
         encoding='utf-8-sig',
         errors='replace',
-        newline='')
-    reader = csv.reader(text)
-    next(reader, None)
-    return reader
+        newline='',
+    ) as text:
+        reader = csv.reader(text)
+        next(reader, None)  # header
+        yield from reader
 
 
 def count_csv_rows(data: bytes) -> int:
-    return sum(1 for _ in _csv_reader(data))
-
-
-def iter_csv_rows(data: bytes) -> Iterable[list[str]]:
-    yield from _csv_reader(data)
-
-
-def _set_job_status(db,
-                    job,
-                    status: JobStatus,
-                    *,
-                    error: str | None = None) -> None:
-    job.status = status
-    job.error = error
-    db.commit()
+    return sum(1 for _ in iter_csv_rows(data))
 
 
 def _update_job(db, job_uuid: uuid.UUID, **fields) -> None:
@@ -70,61 +60,219 @@ def _update_job(db, job_uuid: uuid.UUID, **fields) -> None:
     db.commit()
 
 
-def _get_s3_key(db, job_uuid: uuid.UUID) -> None:
-    return db.scalar(
-        select(ImportJob.s3_key)
-        .where(ImportJob.id == job_uuid)
+def _norm(s: str | None) -> str | None:
+    if s is None:
+        return None
+    s = s.strip()
+    return s or None
+
+
+def parse_customer_row(row: list[str], row_num: int) -> tuple[dict | None, str | None]:
+    if not row:
+        return None, f'row {row_num}: empty row'
+
+    email = _norm(row[0])
+    if not email:
+        return None, f'row {row_num}: empty email'
+
+    if '@' not in email or '.' not in email.split('@')[-1]:
+        return None, f'row {row_num}: invalid email "{email}"'
+
+    return {
+        'email': email,
+        'first_name': _norm(row[1]) if len(row) > 1 else None,
+        'last_name': _norm(row[2]) if len(row) > 2 else None,
+        'phone': _norm(row[3]) if len(row) > 3 else None,
+        'city': _norm(row[4]) if len(row) > 4 else None,
+    }, None
+
+
+class BatchBuffer:
+    def __init__(self, size: int):
+        self.size = size
+        self.rows: list[dict] = []
+        self.row_nums: list[int] = []
+
+    def add(self, payload: dict, row_num: int) -> None:
+        self.rows.append(payload)
+        self.row_nums.append(row_num)
+
+    def full(self) -> bool:
+        return len(self.rows) >= self.size
+
+    def clear(self) -> None:
+        self.rows.clear()
+        self.row_nums.clear()
+
+
+class InsertOnlyFlusher:
+    def flush(self, db, buffer: BatchBuffer, errors: list[str]) -> None:
+        if not buffer.rows:
+            return
+
+        emails = [r['email'] for r in buffer.rows]
+        existing = set(
+            db.execute(
+                select(Customer.email).where(Customer.email.in_(emails))
+            ).scalars().all()
+        )
+
+        to_insert = []
+        for payload, rn in zip(buffer.rows, buffer.row_nums):
+            if payload['email'] in existing:
+                errors.append(
+                    f'row {rn}: email already exists "{payload["email"]}"')
+            else:
+                to_insert.append(payload)
+
+        if to_insert:
+            db.execute(sa.insert(Customer).values(to_insert))
+
+        db.commit()
+
+
+class UpsertFlusher:
+    def flush(self, db, buffer: BatchBuffer, errors: list[str]) -> None:
+        if not buffer.rows:
+            return
+
+        stmt = pg_insert(Customer).values(buffer.rows)
+
+        # ВАЖНО: колонка называется update_at (см. модель + миграцию)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[Customer.email],
+            set_={
+                'first_name': stmt.excluded.first_name,
+                'last_name': stmt.excluded.last_name,
+                'phone': stmt.excluded.phone,
+                'city': stmt.excluded.city,
+                'update_at': sa.func.now(),
+            },
+        )
+
+        db.execute(stmt)
+        db.commit()
+
+
+def get_flusher(mode: ImportMode):
+    return InsertOnlyFlusher() if mode == ImportMode.insert_only else UpsertFlusher()
+
+
+def _short_error_summary(errors: list[str], limit: int = 3) -> str:
+    if not errors:
+        return ''
+    head = ' | '.join(errors[:limit])
+    if len(errors) > limit:
+        return f'errors: {len(errors)}; first: {head} ...'
+    return f'errors: {len(errors)}; first: {head}'
+
+
+def parse_job_id(job_id: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(job_id)
+    except ValueError:
+        return None
+
+
+def load_job_meta(db, job_uuid: uuid.UUID) -> tuple[str, ImportMode] | None:
+    row = db.execute(
+        select(ImportJob.s3_key, ImportJob.mode).where(
+            ImportJob.id == job_uuid)
+    ).one_or_none()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
+def mark_failed(db, job_uuid: uuid.UUID, err: Exception) -> None:
+    db.rollback()
+    _update_job(
+        db,
+        job_uuid,
+        status=JobStatus.failed,
+        error=f'{type(err).__name__}: {err}',
+    )
+
+
+def process_csv(db, job_uuid: uuid.UUID, data: bytes, flusher) -> tuple[int, list[str]]:
+    processed = 0
+    errors: list[str] = []
+    seen_emails: set[str] = set()  # дубли в файле
+    buffer = BatchBuffer(BATCH_SIZE)
+
+    for row_num, row in enumerate(iter_csv_rows(data), start=1):
+        processed += 1
+
+        payload, err = parse_customer_row(row, row_num)
+        if err:
+            errors.append(err)
+        else:
+            email = payload['email']
+            if email in seen_emails:
+                errors.append(
+                    f'row {row_num}: duplicate email in file "{email}"')
+            else:
+                seen_emails.add(email)
+                buffer.add(payload, row_num)
+
+        if SLOW_MS:
+            time.sleep(SLOW_MS / 1000)
+
+        if processed % PROGRESS_EVERY == 0:
+            _update_job(db, job_uuid, processed_rows=processed)
+
+        if buffer.full():
+            flusher.flush(db, buffer, errors)
+            buffer.clear()
+
+    flusher.flush(db, buffer, errors)
+    buffer.clear()
+
+    return processed, errors
+
+
+def run_import(db, job_uuid: uuid.UUID, s3_key: str, mode: ImportMode) -> None:
+    _update_job(db, job_uuid, status=JobStatus.processing,
+                error=None, processed_rows=0)
+
+    data = get_bytes(s3_key)
+    total = count_csv_rows(data)
+    _update_job(db, job_uuid, total_rows=total, processed_rows=0)
+
+    flusher = get_flusher(mode)
+    processed, errors = process_csv(db, job_uuid, data, flusher)
+
+    final_status = JobStatus.done if not errors else JobStatus.failed
+    final_error = None if not errors else _short_error_summary(errors)
+
+    _update_job(
+        db,
+        job_uuid,
+        processed_rows=processed,
+        status=final_status,
+        error=final_error,
     )
 
 
 @app.task(name='process_import', bind=True)
 def process_import(self, job_id: str) -> str:
-    try:
-        job_uuid = uuid.UUID(job_id)
-    except ValueError:
+    job_uuid = parse_job_id(job_id)
+    if not job_uuid:
         logger.error('Invalid job id: %s', job_id)
         return 'bad_id'
 
     with SessionLocal() as db:
-        job = db.get(ImportJob, job_uuid)
-
-        if job is None:
+        meta = load_job_meta(db, job_uuid)
+        if not meta:
             logger.error('ImportJob not found: %s', job_id)
             return 'not_found'
 
+        s3_key, mode = meta
+
         try:
-            _set_job_status(db, job, JobStatus.processing, error=None)
-
-            data = get_bytes(job.s3_key)
-            total = count_csv_rows(data)
-
-            job.total_rows = total
-            job.processed_rows = total
-
-            # db.commit()
-            # processed = 0
-            # for _row in iter_csv_rows(data):
-            #     processed += 1
-
-            #     # ВОТ ТУТ КОНКРЕТНО замедление
-            #     if SLOW_MS:
-            #         time.sleep(SLOW_MS / 1000)
-
-            #     # периодически пишем прогресс
-            #     if processed % PROGRESS_EVERY == 0:
-            #         job.processed_rows = processed
-            #         db.commit()
-            # job.processed_rows = processed
-            _set_job_status(db, job, JobStatus.done, error=None)
+            run_import(db, job_uuid, s3_key, mode)
             return 'ok'
-
         except Exception as e:
-            db.rollback()
-            try:
-                job.status = JobStatus.failed
-                job.error = f'{type(e).__name__}: {e}'
-                db.commit()
-            except Exception:
-                db.rollback()
+            mark_failed(db, job_uuid, e)
             logger.exception('Import failed: %s', job_id)
             raise
