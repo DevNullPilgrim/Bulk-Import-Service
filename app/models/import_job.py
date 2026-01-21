@@ -16,6 +16,11 @@ class JobStatus(str, enum.Enum):
     failed = 'failed'
 
 
+class ImportMode(str, enum.Enum):
+    insert_only = 'insert_only'
+    upsert = 'upsert'
+
+
 class ImportJob(Base):
     __tablename__ = 'import_jobs'
 
@@ -46,4 +51,9 @@ class ImportJob(Base):
         DateTime(timezone=True),
         server_default=sa.func.now(),
         nullable=False,
+    )
+    mode: Mapped[ImportMode] = mapped_column(
+        Enum(ImportMode, name='import_mode'),
+        default=ImportMode.insert_only,
+        nullable=False
     )

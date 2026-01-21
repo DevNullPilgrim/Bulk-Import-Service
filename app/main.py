@@ -92,7 +92,7 @@ def get_import(job_id: str, db: Session = Depends(get_db)) -> dict[str, object]:
     try:
         job_uuid = uuid.UUID(job_id)
     except ValueError:
-        raise HTTPException(status_code=442, detail='Invalid job_id')
+        raise HTTPException(status_code=422, detail='Invalid job_id')
 
     job = db.get(ImportJob, job_uuid)
     if not job:

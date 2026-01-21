@@ -1,9 +1,13 @@
 import csv
+import time
 import io
+import os
 import uuid
+from typing import Iterable, Iterator
 
 from celery import Celery
 from celery.utils.log import get_task_logger
+from sqlalchemy import select, update
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -18,23 +22,33 @@ app = Celery(
 
 logger = get_task_logger(__name__)
 
+# обновлять processed_rows каждые N строк
+PROGRESS_EVERY = 50
+SLOW_MS = int(os.getenv("IMPORT_SLOW_MS", "0"))
+
 
 @app.task(name='ping')
 def ping():
     return 'pong'
 
 
-def _count_csv_rows(data: bytes) -> int:
+def _csv_reader(data: bytes) -> Iterator[list[str]]:
     text = io.TextIOWrapper(
         io.BytesIO(data),
         encoding='utf-8-sig',
         errors='replace',
         newline='')
     reader = csv.reader(text)
-    header = next(reader, None)
-    if header is None:
-        return 0
-    return sum(1 for _ in reader)
+    next(reader, None)
+    return reader
+
+
+def count_csv_rows(data: bytes) -> int:
+    return sum(1 for _ in _csv_reader(data))
+
+
+def iter_csv_rows(data: bytes) -> Iterable[list[str]]:
+    yield from _csv_reader(data)
 
 
 def _set_job_status(db,
@@ -45,6 +59,22 @@ def _set_job_status(db,
     job.status = status
     job.error = error
     db.commit()
+
+
+def _update_job(db, job_uuid: uuid.UUID, **fields) -> None:
+    db.execute(
+        update(ImportJob)
+        .where(ImportJob.id == job_uuid)
+        .values(**fields)
+    )
+    db.commit()
+
+
+def _get_s3_key(db, job_uuid: uuid.UUID) -> None:
+    return db.scalar(
+        select(ImportJob.s3_key)
+        .where(ImportJob.id == job_uuid)
+    )
 
 
 @app.task(name='process_import', bind=True)
@@ -66,10 +96,25 @@ def process_import(self, job_id: str) -> str:
             _set_job_status(db, job, JobStatus.processing, error=None)
 
             data = get_bytes(job.s3_key)
-            total = _count_csv_rows(data)
+            total = count_csv_rows(data)
 
             job.total_rows = total
             job.processed_rows = total
+
+            # db.commit()
+            # processed = 0
+            # for _row in iter_csv_rows(data):
+            #     processed += 1
+
+            #     # ВОТ ТУТ КОНКРЕТНО замедление
+            #     if SLOW_MS:
+            #         time.sleep(SLOW_MS / 1000)
+
+            #     # периодически пишем прогресс
+            #     if processed % PROGRESS_EVERY == 0:
+            #         job.processed_rows = processed
+            #         db.commit()
+            # job.processed_rows = processed
             _set_job_status(db, job, JobStatus.done, error=None)
             return 'ok'
 
