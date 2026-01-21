@@ -57,3 +57,12 @@ class ImportJob(Base):
         default=ImportMode.insert_only,
         nullable=False
     )
+    error_report_object_key: Mapped[str | None] = mapped_column(
+        String(1024),
+        nullable=True
+    )
+    error_count: Mapped[Integer] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
+    )
