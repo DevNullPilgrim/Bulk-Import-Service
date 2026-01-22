@@ -15,7 +15,8 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.customer import Customer
 from app.models.import_job import ImportJob, ImportMode, JobStatus
-from app.storage.s3 import get_bytes
+from app.storage.s3 import get_bytes, put_bytes
+from worker.errors_report import ErrorRow, build_errors_csv
 
 app = Celery(
     'bulk_import',
@@ -106,7 +107,11 @@ class BatchBuffer:
 
 
 class InsertOnlyFlusher:
-    def flush(self, db, buffer: BatchBuffer, errors: list[str]) -> None:
+    def flush(self,
+              db,
+              buffer: BatchBuffer,
+              errors: list[str],
+              error_rows: list[ErrorRow]) -> None:
         if not buffer.rows:
             return
 
@@ -120,8 +125,12 @@ class InsertOnlyFlusher:
         to_insert = []
         for payload, rn in zip(buffer.rows, buffer.row_nums):
             if payload['email'] in existing:
+                msg = f'email already exists {payload["email"]}'
                 errors.append(
-                    f'row {rn}: email already exists "{payload["email"]}"')
+                    f'row {rn}: {msg}')
+                error_rows.append(ErrorRow(row=rn,
+                                           error=msg,
+                                           raw=payload["email"]))
             else:
                 to_insert.append(payload)
 
@@ -132,7 +141,11 @@ class InsertOnlyFlusher:
 
 
 class UpsertFlusher:
-    def flush(self, db, buffer: BatchBuffer, errors: list[str]) -> None:
+    def flush(self,
+              db,
+              buffer: BatchBuffer,
+              errors: list[str],
+              error_rows: list[ErrorRow],) -> None:
         if not buffer.rows:
             return
 
@@ -194,9 +207,13 @@ def mark_failed(db, job_uuid: uuid.UUID, err: Exception) -> None:
     )
 
 
-def process_csv(db, job_uuid: uuid.UUID, data: bytes, flusher) -> tuple[int, list[str]]:
+def process_csv(db,
+                job_uuid: uuid.UUID,
+                data: bytes,
+                flusher) -> tuple[int, list[str], list[ErrorRow]]:
     processed = 0
     errors: list[str] = []
+    error_rows: list[ErrorRow] = []
     seen_emails: set[str] = set()  # дубли в файле
     buffer = BatchBuffer(BATCH_SIZE)
 
@@ -206,11 +223,17 @@ def process_csv(db, job_uuid: uuid.UUID, data: bytes, flusher) -> tuple[int, lis
         payload, err = parse_customer_row(row, row_num)
         if err:
             errors.append(err)
+            error_rows.append(ErrorRow(row=row_num,
+                                       error=err,
+                                       raw=','.join(row)))
         else:
             email = payload['email']
             if email in seen_emails:
-                errors.append(
-                    f'row {row_num}: duplicate email in file "{email}"')
+                msg = f'duplicate email "{email}" in file'
+                errors.append(f"row {row_num}: {msg}")
+                error_rows.append(ErrorRow(row=row_num,
+                                           error=msg,
+                                           raw=",".join(row)))
             else:
                 seen_emails.add(email)
                 buffer.add(payload, row_num)
@@ -222,13 +245,13 @@ def process_csv(db, job_uuid: uuid.UUID, data: bytes, flusher) -> tuple[int, lis
             _update_job(db, job_uuid, processed_rows=processed)
 
         if buffer.full():
-            flusher.flush(db, buffer, errors)
+            flusher.flush(db, buffer, errors, error_rows)
             buffer.clear()
 
-    flusher.flush(db, buffer, errors)
+    flusher.flush(db, buffer, errors, error_rows)
     buffer.clear()
 
-    return processed, errors
+    return processed, errors, error_rows
 
 
 def run_import(db, job_uuid: uuid.UUID, s3_key: str, mode: ImportMode) -> None:
@@ -240,7 +263,12 @@ def run_import(db, job_uuid: uuid.UUID, s3_key: str, mode: ImportMode) -> None:
     _update_job(db, job_uuid, total_rows=total, processed_rows=0)
 
     flusher = get_flusher(mode)
-    processed, errors = process_csv(db, job_uuid, data, flusher)
+    processed, errors, error_rows = process_csv(db, job_uuid, data, flusher)
+
+    report_key = None
+    if error_rows:
+        errors_bytes = build_errors_csv(error_rows)
+        report_key = put_bytes(errors_bytes, filename=f"errors_{job_uuid}.csv")
 
     final_status = JobStatus.done if not errors else JobStatus.failed
     final_error = None if not errors else _short_error_summary(errors)
@@ -251,6 +279,8 @@ def run_import(db, job_uuid: uuid.UUID, s3_key: str, mode: ImportMode) -> None:
         processed_rows=processed,
         status=final_status,
         error=final_error,
+        error_report_object_key=report_key,
+        error_count=len(error_rows),
     )
 
 

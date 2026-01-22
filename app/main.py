@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.import_job import ImportJob, ImportMode, JobStatus
-from app.storage.s3 import put_bytes
+from app.storage.s3 import put_bytes, presign_get
+from fastapi import HTTPException
 
 celery_client = Celery(
     'bulk_import',
@@ -72,7 +73,6 @@ async def create_import(
     db.commit()
     db.refresh(job)
 
-    # важно: имя таски должно совпадать с worker: @app.task(name='process_import')
     celery_client.send_task('process_import', args=[str(job.id)])
 
     return jsonable_encoder(_job_to_dict(job))
@@ -96,3 +96,23 @@ def get_import(job_id: str, db: Session = Depends(get_db)) -> dict:
 @app.get('/import/{job_id}', include_in_schema=False)
 def get_import_alias(job_id: str, db: Session = Depends(get_db)) -> dict:
     return get_import(job_id, db)
+
+
+@app.get("/imports/{job_id}/errors")
+def get_import_errors(job_id: uuid.UUID, db=Depends(get_db)):
+    job = db.get(ImportJob, job_id)
+    if not job:
+        raise HTTPException(404, "not found")
+
+    if not job.error_report_object_key:
+        # пока ещё работает — отчёта может не быть
+        if job.status in (JobStatus.pending, JobStatus.processing):
+            raise HTTPException(409, "not ready")
+        raise HTTPException(404, "no errors report")
+
+    url = presign_get(
+        job.error_report_object_key,
+        expires_seconds=3600,
+        download_filename=f"errors_{job_id}.csv",
+    )
+    return {"url": url}

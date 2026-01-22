@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     s3_secret_key: str
     s3_bucket: str = 'imports'
     s3_region: str = 'us-east-1'
+    s3_public_endpoint_url: str | None = None
 
 
 settings = Settings()

@@ -10,10 +10,14 @@ _NOT_FOUND = {'404', 'NoSuchBucket', 'NotFound'}
 _IGNORE_CREATE = {'BucketAlreadyOwnedByYou', 'BucketAlreadyExists'}
 
 
-def get_s3_client():
+def get_s3_client(*, public: bool = False):
+    endpoint = settings.s3_endpoint_url
+    if public and settings.s3_public_endpoint_url:
+        endpoint = settings.s3_public_endpoint_url
+
     return boto3.client(
         's3',
-        endpoint_url=settings.s3_endpoint_url,
+        endpoint_url=endpoint,
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key,
         region_name=settings.s3_region,
@@ -64,3 +68,26 @@ def get_bytes(key: str) -> bytes:
         Key=key,
     )
     return obj['Body'].read()
+
+
+def presign_get(
+        object_key: str,
+        *,
+        expires_seconds: int = 3600,
+        download_filename: str | None = None,) -> str:
+    s3 = get_s3_client(public=True)
+    params = {
+        'Bucket': settings.s3_bucket,
+        'Key': object_key,
+    }
+
+    if download_filename:
+        params['ResponseContentDisposition'] = (
+            f'attachment; filename="{download_filename}"'
+        )
+
+    return s3.generate_presigned_url(
+        'get_object',
+        Params=params,
+        ExpiresIn=expires_seconds,
+    )
