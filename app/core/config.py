@@ -15,5 +15,9 @@ class Settings(BaseSettings):
     s3_region: str = 'us-east-1'
     s3_public_endpoint_url: str | None = None
 
+    jwt_secret: str = 'my_super_secret'
+    jwt_alg: str = 'HS256'
+    jwt_access_ttl_seconds: int = 3600
+
 
 settings = Settings()

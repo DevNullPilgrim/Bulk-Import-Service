@@ -9,8 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.import_job import ImportJob, ImportMode, JobStatus
-from app.storage.s3 import put_bytes, presign_get
-from fastapi import HTTPException
+from app.storage.s3 import presign_get, put_bytes
 
 celery_client = Celery(
     'bulk_import',

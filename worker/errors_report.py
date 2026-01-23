@@ -1,7 +1,7 @@
 import csv
 import io
-from typing import Iterable
 from dataclasses import dataclass
+from typing import Iterable
 
 
 @dataclass(frozen=True)
