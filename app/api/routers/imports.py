@@ -20,12 +20,12 @@ from app.core.celery_client import celery_client
 from app.db.session import get_db
 from app.models.import_job import ImportJob, ImportMode, JobStatus
 from app.models.user import User
-from app.storage.s3 import presign_get, put_bytes
+from app.storage.s3 import presing_get, put_bytes
 
 router = APIRouter(prefix='/imports', tags=['imports'])
 
 
-@router.post('/imports')
+@router.post('')
 def create_import(
     mode: ImportMode = Query(ImportMode.insert_only),
     file: UploadFile = File(...),
@@ -49,7 +49,7 @@ def create_import(
     ).scalar_one_or_none()
 
     if existing:
-        return job_to_dict(existing)
+        return jsonable_encoder(job_to_dict(existing))
 
     data = file.file.read()
     if not data:
@@ -57,6 +57,7 @@ def create_import(
 
     filename = file.filename or 'upload.csv'
     s3_key = put_bytes(data, filename=filename)
+
     job = ImportJob(
         user_id=user.id,
         idempotency_key=idem,
@@ -82,48 +83,40 @@ def create_import(
                 ImportJob.idempotency_key == idem,
             )
         ).scalar_one()
-        return job_to_dict(existing)
+        return jsonable_encoder(job_to_dict(existing))
 
     db.refresh(job)
-
     celery_client.send_task('process_import', args=[str(job.id)])
-
-    return job_to_dict(job)
-
-
-@router.get('/imports/{job_id}')
-def get_import(job_id: str, db: Session = Depends(get_db)) -> dict:
-    try:
-        job_uuid = uuid.UUID(job_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail='not found')
-
-    job = db.get(ImportJob, job_uuid)
-    if job is None:
-        raise HTTPException(status_code=404, detail='not found')
 
     return jsonable_encoder(job_to_dict(job))
 
 
-@router.get('/import/{job_id}', include_in_schema=False)
-def get_import_alias(job_id: str, db: Session = Depends(get_db)) -> dict:
-    return get_import(job_id, db)
-
-
-@router.get('/imports/{job_id}/errors')
-def get_import_errors(job_id: uuid.UUID, db=Depends(get_db)):
+@router.get('/{job_id}')
+def get_import(job_id: uuid.UUID,
+               user: User = Depends(get_current_user),
+               db: Session = Depends(get_db)) -> dict:
     job = db.get(ImportJob, job_id)
-    if not job:
-        raise HTTPException(404, 'not found')
+    if job is None or job.user_id != user.id:
+        raise HTTPException(status_code=404, detail='not found')
+    return jsonable_encoder(job_to_dict(job=job))
+
+
+@router.get('/{job_id}/errors')
+def get_import_errors(job_id: uuid.UUID,
+                      user: User = Depends(get_current_user),
+                      db=Depends(get_db)) -> dict:
+    job = db.get(ImportJob, job_id)
+    if job is None or job.user_id != user.id:
+        raise HTTPException(status_code=404, detail='Not found.')
 
     if not job.error_report_object_key:
         if job.status in (JobStatus.pending, JobStatus.processing):
-            raise HTTPException(409, 'not ready')
-        raise HTTPException(404, 'no errors report')
+            raise HTTPException(status_code=409, detail='Not ready.')
+        raise HTTPException(status_code=404, detail='Error report.')
 
-    url = presign_get(
+    url = presing_get(
         job.error_report_object_key,
         expires_seconds=3600,
-        download_filename=f'errors_{job_id}.csv',
+        download_filename=f'errors_{job.id}.csv'
     )
     return {'url': url}

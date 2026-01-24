@@ -70,7 +70,7 @@ def get_bytes(key: str) -> bytes:
     return obj['Body'].read()
 
 
-def presign_get(
+def presing_get(
         object_key: str,
         *,
         expires_seconds: int = 3600,
