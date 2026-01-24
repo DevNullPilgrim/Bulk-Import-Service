@@ -18,9 +18,14 @@ class User(Base):
         sa.String(320),
         unique=True,
         nullable=False,
+        index=True,
     )
     created_at: Mapped[sa.DateTime] = mapped_column(
         sa.DateTime(timezone=True),
         server_default=sa.func.now(),
+        nullable=False,
+    )
+    hashed_password: Mapped[str] = mapped_column(
+        sa.String(255),
         nullable=False,
     )

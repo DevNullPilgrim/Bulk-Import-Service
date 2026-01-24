@@ -26,7 +26,8 @@ def get_s3_client(*, public: bool = False):
 
 
 def _error_code(error: ClientError) -> str:
-    return str(error.response.get('Error', {}).get('code', ''))
+    error = error.response.get('Error', {})
+    return str(error.get('Code') or error.get('code') or '')
 
 
 def ensure_bucket(s3, bucket: str) -> None:

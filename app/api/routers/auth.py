@@ -10,10 +10,10 @@ from app.core.security import (
 from app.db.session import get_db
 from app.models.user import User
 
-router = APIRouter(prefix='/author', tags=['author'])
+router = APIRouter(prefix='/auth', tags=['auth'])
 
 
-@router.post('/auth/register')
+@router.post('/register')
 def register(data: RegisterIn, db=Depends(get_db)):
     email = str(data.email).lower()
     exists = db.execute(select(User)
@@ -30,7 +30,7 @@ def register(data: RegisterIn, db=Depends(get_db)):
     return {'id': str(user.id), 'email': user.email}
 
 
-@router.post('/auth/token', response_model=TokenOut)
+@router.post('/token', response_model=TokenOut)
 def token(data: LoginIn, db=Depends(get_db)):
     email = str(data.email).lower()
     user = db.execute(select(User).where(

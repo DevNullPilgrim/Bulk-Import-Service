@@ -80,6 +80,7 @@ def parse_customer_row(row: list[str], row_num: int) -> tuple[dict | None, str |
         return None, f'row {row_num}: invalid email "{email}"'
 
     return {
+        'id': uuid.uuid4(),
         'email': email,
         'first_name': _norm(row[1]) if len(row) > 1 else None,
         'last_name': _norm(row[2]) if len(row) > 2 else None,
@@ -125,7 +126,7 @@ class InsertOnlyFlusher:
         to_insert = []
         for payload, rn in zip(buffer.rows, buffer.row_nums):
             if payload['email'] in existing:
-                msg = f'email already exists {payload['email']}'
+                msg = f'email already exists {payload["email"]}'
                 errors.append(
                     f'row {rn}: {msg}')
                 error_rows.append(ErrorRow(row=rn,
