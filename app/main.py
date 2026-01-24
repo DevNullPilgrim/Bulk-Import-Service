@@ -8,6 +8,7 @@ from app.db.session import get_db
 app = FastAPI(title='Bulk Import Service')
 app.include_router(auth.router)
 app.include_router(imports.router)
+app.router.redirect_slashes = False
 
 
 @app.get('/health')
