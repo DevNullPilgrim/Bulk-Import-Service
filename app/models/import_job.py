@@ -66,3 +66,10 @@ class ImportJob(Base):
         default=0,
         nullable=False
     )
+    user_id = sa.Column(sa.UUID(as_uuid=True), nullable=False, index=True)
+    idempotency_key = sa.Column(sa.String(128), nullable=False)
+    __table_args__ = (
+        sa.UniqueConstraint('user_id',
+                            'idempotency_key',
+                            name='uq_import_jobs_user_id_idempotency_key'
+                            ),)

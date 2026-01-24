@@ -44,7 +44,7 @@ def iter_csv_rows(data: bytes) -> Iterator[list[str]]:
         newline='',
     ) as text:
         reader = csv.reader(text)
-        next(reader, None)  # header
+        next(reader, None)
         yield from reader
 
 
@@ -125,12 +125,12 @@ class InsertOnlyFlusher:
         to_insert = []
         for payload, rn in zip(buffer.rows, buffer.row_nums):
             if payload['email'] in existing:
-                msg = f'email already exists {payload["email"]}'
+                msg = f'email already exists {payload['email']}'
                 errors.append(
                     f'row {rn}: {msg}')
                 error_rows.append(ErrorRow(row=rn,
                                            error=msg,
-                                           raw=payload["email"]))
+                                           raw=payload['email']))
             else:
                 to_insert.append(payload)
 
@@ -230,10 +230,10 @@ def process_csv(db,
             email = payload['email']
             if email in seen_emails:
                 msg = f'duplicate email "{email}" in file'
-                errors.append(f"row {row_num}: {msg}")
+                errors.append(f'row {row_num}: {msg}')
                 error_rows.append(ErrorRow(row=row_num,
                                            error=msg,
-                                           raw=",".join(row)))
+                                           raw=','.join(row)))
             else:
                 seen_emails.add(email)
                 buffer.add(payload, row_num)
@@ -268,7 +268,7 @@ def run_import(db, job_uuid: uuid.UUID, s3_key: str, mode: ImportMode) -> None:
     report_key = None
     if error_rows:
         errors_bytes = build_errors_csv(error_rows)
-        report_key = put_bytes(errors_bytes, filename=f"errors_{job_uuid}.csv")
+        report_key = put_bytes(errors_bytes, filename=f'errors_{job_uuid}.csv')
 
     final_status = JobStatus.done if not errors else JobStatus.failed
     final_error = None if not errors else _short_error_summary(errors)

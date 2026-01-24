@@ -13,16 +13,16 @@ def hash_password(pasword: str) -> str:
     return pwd_context.hash(hash_password)
 
 
-def verify_passowrd(pasword: str, hashed: str) -> bool:
+def verify_password(pasword: str, hashed: str) -> bool:
     return pwd_context.verify(pasword, hashed)
 
 
 def create_acces_token(*, sub: str) -> str:
     now = int(time.time())
     payload: dict[str, Any] = {
-        "sub": sub,
-        "iat": now,
-        "exp": now + settings.jwt_access_ttl_seconds,
+        'sub': sub,
+        'iat': now,
+        'exp': now + settings.jwt_access_ttl_seconds,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_alg)
 
