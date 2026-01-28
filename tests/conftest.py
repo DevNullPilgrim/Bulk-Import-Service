@@ -15,6 +15,7 @@ import csv
 import io
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Generator
@@ -69,10 +70,10 @@ class UserCreds:
     token: str
 
 
-def register_and_token(client: httpx.Client,
-                       *,
-                       email: str,
-                       password: str) -> str:
+def _register_and_token(client: httpx.Client,
+                        *,
+                        email: str,
+                        password: str) -> str:
     register = client.post('/auth/register',
                            json={'email': email, 'password': password})
     assert register.status_code in (HTTPStatus.OK,
@@ -86,6 +87,23 @@ def register_and_token(client: httpx.Client,
     data = token_resp.json()
     assert 'access_token' in data, data
     return data['access_token']
+
+
+def _make_user(client: httpx.Client) -> UserCreds:
+    email = f'u_{uuid.uuid4().hex[:10]}@test.com'
+    password = 'pass12345'
+    token = _register_and_token(client, email=email, password=password)
+    return UserCreds(email=email, password=password, token=token)
+
+
+@pytest.fixture()
+def user(client: httpx.Client) -> UserCreds:
+    return _make_user(client)
+
+
+@pytest.fixture()
+def other_user(client: httpx.Client) -> UserCreds:
+    return _make_user(client)
 
 
 def auth_headers(token: str,
