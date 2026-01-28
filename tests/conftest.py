@@ -233,14 +233,10 @@ def clean_db(db_engine):
     ВАЖНО: гоняй это на dev-стеке, иначе снесёшь реальные данные.
     """
     with db_engine.begin() as conn:
-        conn.execute(
-            text("TRUNCATE TABLE import_jobs RESTART IDENTITY CASCADE"))
-        conn.execute(text("TRUNCATE TABLE customers RESTART IDENTITY CASCADE"))
-        conn.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
+        conn.execute(text(
+            "TRUNCATE TABLE import_jobs, customers, users RESTART IDENTITY CASCADE"
+        ))
     yield
-    with db_engine.begin() as conn:
-        dbname = conn.execute(text("select current_database()")).scalar()
-        print("TEST DB:", dbname)
 
 
 def rand_email(prefix="c") -> str:

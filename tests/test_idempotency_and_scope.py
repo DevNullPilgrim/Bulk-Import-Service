@@ -1,11 +1,12 @@
 import uuid
 from http import HTTPStatus
+
 from .conftest import (
+    auth_headers,
     create_import,
     make_csv_bytes,
-    wait_job_done,
     rand_email,
-    auth_headers
+    wait_job_done,
 )
 
 
