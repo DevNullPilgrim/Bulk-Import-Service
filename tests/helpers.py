@@ -3,22 +3,28 @@ import io
 import uuid
 from http import HTTPStatus
 
-from .conftest import create_import, wait_job_done
+from .conftest import (
+    create_import,
+    get_errors_url,
+    make_csv_bytes,
+    rand_email,
+    wait_job_done,
+)
 
 
-def create_adn_wait(client,
+def create_and_wait(client,
                     *,
                     token: str,
                     idem_prefix: str,
                     mode: str,
-                    scv_bytes: bytes,
+                    csv_bytes: bytes,
                     timeout_s: float = 60.0):
     job = create_import(
         client,
         token=token,
         idem_key=f'{idem_prefix}-{uuid.uuid4().hex[:8]}',
         mode=mode,
-        csv_bytes=scv_bytes,
+        csv_bytes=csv_bytes,
     )
     final = wait_job_done(
         client,
@@ -26,7 +32,7 @@ def create_adn_wait(client,
         job_id=job['id'],
         timeout_s=timeout_s
     )
-    return job, final
+    return final
 
 
 def download_errors_csv(client, url: str) -> tuple[list[str], list[dict]]:
@@ -38,3 +44,45 @@ def download_errors_csv(client, url: str) -> tuple[list[str], list[dict]]:
     fieldnames = list(reader.fieldnames) if reader.fieldnames else []
     rows = list(reader)
     return fieldnames, rows
+
+
+def seed_customer(client, user, *, email: str | None = None) -> str:
+    """Создает одного customer через insert_only и ждет done. -> email."""
+    email = email or rand_email("dup")
+    csv1 = make_csv_bytes([[email, "A", "", "", "OldCity"]])
+    final = create_and_wait(
+        client,
+        token=user.token,
+        idem_prefix="seed",
+        mode="insert_only",
+        csv_bytes=csv1,
+    )
+    assert final["status"] == "done", final
+    return email
+
+
+def make_failed_job_with_errors(client, user, *, dup_email: str):
+    """Создаёт job, который должен упасть.
+
+    Дубль + невалидный email. Возвращает (final, errors_url).
+    """
+    csv_2 = make_csv_bytes([
+        [dup_email, "B", "", "", "NewCity"],        # дубль в БД
+        ["bad_email", "X", "", "", "Nowhere"],      # Не валидный
+    ])
+    job = create_import(
+        client,
+        token=user.token,
+        idem_key='fail-'+uuid.uuid4().hex[:8],
+        mode='insert_only',
+        csv_bytes=csv_2,
+    )
+    final = wait_job_done(client=client,
+                          token=user.token,
+                          job_id=job['id'],
+                          timeout_s=60)
+    assert final['status'] == 'failed', final
+
+    url = get_errors_url(client=client, token=user.token, job_id=job['id'])
+    assert url is not None
+    return final, url
