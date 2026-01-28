@@ -138,7 +138,7 @@ def create_import(client: httpx.Client,
         headers=auth_headers(token, idem_key=idem_key),
         files=files,
     )
-    assert read.status_code == (HTTPStatus.OK, HTTPStatus.CREATED), read.text
+    assert read.status_code in (HTTPStatus.OK, HTTPStatus.CREATED), read.text
     data = read.json()
     assert 'id' in data, data
     return data
@@ -232,7 +232,16 @@ def clean_db(db_engine):
     TRUNCATE import_jobs/customers/users с RESTART IDENTITY CASCADE.
     ВАЖНО: гоняй это на dev-стеке, иначе снесёшь реальные данные.
     """
-    with db_engine.begin() as connect:
-        connect.execute(text(
-            'TRUNCATE TABLE import_jobs, customers, users RESTART IDENTITY CASCADE;'))
+    with db_engine.begin() as conn:
+        conn.execute(
+            text("TRUNCATE TABLE import_jobs RESTART IDENTITY CASCADE"))
+        conn.execute(text("TRUNCATE TABLE customers RESTART IDENTITY CASCADE"))
+        conn.execute(text("TRUNCATE TABLE users RESTART IDENTITY CASCADE"))
     yield
+    with db_engine.begin() as conn:
+        dbname = conn.execute(text("select current_database()")).scalar()
+        print("TEST DB:", dbname)
+
+
+def rand_email(prefix="c") -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:8]}@test.com"
