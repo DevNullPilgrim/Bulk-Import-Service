@@ -35,8 +35,11 @@ def create_and_wait(client,
     return final
 
 
-def download_errors_csv(client, url: str) -> tuple[list[str], list[dict]]:
-    resp = client.get(url)
+def download_errors_csv(client, url: str, host_header: str | None = None):
+    headers = {}
+    if host_header:
+        headers["Host"] = host_header
+    resp = client.get(url, headers=headers or None)
     assert resp.status_code == HTTPStatus.OK, resp.text
 
     text_csv = resp.content.decode("utf-8", errors="replace")
@@ -61,28 +64,36 @@ def seed_customer(client, user, *, email: str | None = None) -> str:
     return email
 
 
-def make_failed_job_with_errors(client, user, *, dup_email: str):
-    """Создаёт job, который должен упасть.
+def make_failed_job_with_errors(client,
+                                user,
+                                *,
+                                dup_email: str) -> tuple[dict, str]:
+    """Создаёт job, который должен упасть (дубль + невалидный email).
 
-    Дубль + невалидный email. Возвращает (final, errors_url).
+    Возвращает (final, errors_url).
     """
     csv_2 = make_csv_bytes([
-        [dup_email, "B", "", "", "NewCity"],        # дубль в БД
-        ["bad_email", "X", "", "", "Nowhere"],      # Не валидный
+        [dup_email, "B", "", "", "NewCity"],     # дубль в БД
+        ["bad_email", "X", "", "", "Nowhere"],   # невалидный email
     ])
+
     job = create_import(
         client,
         token=user.token,
-        idem_key='fail-'+uuid.uuid4().hex[:8],
-        mode='insert_only',
+        idem_key="fail-" + uuid.uuid4().hex[:8],
+        mode="insert_only",
         csv_bytes=csv_2,
     )
-    final = wait_job_done(client=client,
-                          token=user.token,
-                          job_id=job['id'],
-                          timeout_s=60)
-    assert final['status'] == 'failed', final
 
-    url = get_errors_url(client=client, token=user.token, job_id=job['id'])
-    assert url is not None
-    return final, url
+    final = wait_job_done(
+        client=client,
+        token=user.token,
+        job_id=job["id"],
+        timeout_s=60,
+    )
+    assert final["status"] == "failed", final
+
+    errors_url = get_errors_url(
+        client=client, token=user.token, job_id=job["id"])
+    assert errors_url is not None
+    return final, errors_url

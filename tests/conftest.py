@@ -27,25 +27,23 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 
-def _in_docker() -> bool:
-    return os.path.exists('/.dockerenv')
+# def _in_docker() -> bool:
+#     return os.path.exists('/.dockerenv')
 
 
-def _rewriter_minio_url_if_needed(url: str) -> str:
-    """Подменяет presigned MinIO URL при запуске тестов внутри Docker.
+def rewrite_presigned_for_container(url: str) -> tuple[str, str | None]:
+    """API отдаёт presigned URL под localhost:9000 (для браузера на хосте).
 
-    Если тесты работают в контейнере, а API вернул ссылку вида
-    http://localhost:9000/..., то "localhost" указывает на контейнер с тестами,
-    а не на MinIO. В таком случае заменяем localhost/127.0.0.1 на minio:9000.
+        Внутри контейнера localhost = контейнер, поэтому:
+        - реально идём на host.docker.internal:9000
+        - но Host оставляем localhost:9000, чтобы подпись (SigV4) совпала.
     """
-    if not _in_docker():
-        return url
-
     parsed = urlparse(url)
-    if parsed.hostname in {'localhost', '127.0.0.1'} and parsed.port == 9000:
-        new_netloc = 'minio:9000'
-        return urlunparse(parsed._replace(netloc=new_netloc))
-    return url
+    if parsed.hostname in ("localhost", "127.0.0.1") and (parsed.port == 9000 or parsed.port is None):
+        new_url = urlunparse(parsed._replace(
+            netloc="host.docker.internal:9000"))
+        return new_url, "localhost:9000"
+    return url, None
 
 
 def _base_url() -> str:
@@ -186,7 +184,6 @@ def wait_job_done(client: httpx.Client,
 
 
 def get_errors_url(client: httpx.Client,
-                   *,
                    token: str,
                    job_id: str) -> str | None:
     read = client.get(f'/imports/{job_id}/errors',
@@ -194,10 +191,7 @@ def get_errors_url(client: httpx.Client,
     if read.status_code == HTTPStatus.NOT_FOUND:
         return None
     assert read.status_code == HTTPStatus.OK, read.text
-
-    url = read.json().get('url')
-    assert url, read.json()
-    return _rewriter_minio_url_if_needed(url)
+    return read.json().get("url")
 
 
 @pytest.fixture(scope='session')

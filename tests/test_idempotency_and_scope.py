@@ -53,7 +53,7 @@ def test_job_is_scoped_to_user(client, user, other_user):
                         idem_key='k2-'+uuid.uuid4().hex[:8],
                         mode='insert_only', csv_bytes=csv_bytes)
 
-    read = client.get(f'/imports/{job['id']}',
+    read = client.get(f'/imports/{job["id"]}',
                       headers=auth_headers(other_user.token))
     assert read.status_code in (
         HTTPStatus.FORBIDDEN, HTTPStatus.NOT_FOUND), read.text

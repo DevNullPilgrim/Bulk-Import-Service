@@ -33,9 +33,12 @@ def test_failed_job_has_errors_url(client, user):
 
 def test_errors_csv_format(client, user):
     email = seed_customer(client=client, user=user)
-    _, url = make_failed_job_with_errors(client, user, dup_email=email)
+    _, errors_url = make_failed_job_with_errors(client, user, dup_email=email)
 
-    headers, rows = download_errors_csv(client, url)
+    download_url, host_header = make_failed_job_with_errors(errors_url)
+    headers, rows = download_errors_csv(
+        client, download_url, host_header=host_header)
+
     assert headers == ["row", "error", "raw"]
     assert len(rows) >= 1
 
@@ -44,7 +47,7 @@ def test_insert_only_does_not_create_duplicates(client, user, db_engine):
     email = seed_customer(client=client, user=user)
 
     csv_dup = make_csv_bytes([[email, "A", "", "", "OldCity"]])
-    _, final = create_and_wait(
+    final = create_and_wait(
         client,
         token=user.token,
         idem_prefix="dup",
