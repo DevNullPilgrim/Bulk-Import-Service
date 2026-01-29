@@ -1,7 +1,7 @@
 
 from sqlalchemy import text
 
-from .conftest import make_csv_bytes
+from .conftest import make_csv_bytes, rewrite_presigned_for_container
 from .helpers import (
     create_and_wait,
     download_errors_csv,
@@ -35,7 +35,7 @@ def test_errors_csv_format(client, user):
     email = seed_customer(client=client, user=user)
     _, errors_url = make_failed_job_with_errors(client, user, dup_email=email)
 
-    download_url, host_header = make_failed_job_with_errors(errors_url)
+    download_url, host_header = rewrite_presigned_for_container(errors_url)
     headers, rows = download_errors_csv(
         client, download_url, host_header=host_header)
 

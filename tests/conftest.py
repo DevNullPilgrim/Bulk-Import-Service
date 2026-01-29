@@ -31,18 +31,24 @@ from sqlalchemy.engine import Engine
 #     return os.path.exists('/.dockerenv')
 
 
-def rewrite_presigned_for_container(url: str) -> tuple[str, str | None]:
-    """API отдаёт presigned URL под localhost:9000 (для браузера на хосте).
-
-        Внутри контейнера localhost = контейнер, поэтому:
-        - реально идём на host.docker.internal:9000
-        - но Host оставляем localhost:9000, чтобы подпись (SigV4) совпала.
+def rewrite_presigned_for_container(url: str | tuple[str, str | None]) -> tuple[str, str | None]:
     """
+    API отдаёт presigned URL под localhost:9000 (для браузера на хосте).
+
+    Внутри контейнера localhost = контейнер, поэтому:
+      - реально идём на host.docker.internal:9000
+      - но Host оставляем localhost:9000, чтобы подпись (SigV4) совпала.
+    """
+    # если кто-то уже переписал (url, host_header) — просто вернём как есть
+    if isinstance(url, tuple):
+        return url
+
     parsed = urlparse(url)
     if parsed.hostname in ("localhost", "127.0.0.1") and (parsed.port == 9000 or parsed.port is None):
         new_url = urlunparse(parsed._replace(
             netloc="host.docker.internal:9000"))
         return new_url, "localhost:9000"
+
     return url, None
 
 
@@ -191,7 +197,7 @@ def get_errors_url(client: httpx.Client,
     if read.status_code == HTTPStatus.NOT_FOUND:
         return None
     assert read.status_code == HTTPStatus.OK, read.text
-    return read.json().get("url")
+    return read.json().get('url')
 
 
 @pytest.fixture(scope='session')
@@ -228,10 +234,10 @@ def clean_db(db_engine):
     """
     with db_engine.begin() as conn:
         conn.execute(text(
-            "TRUNCATE TABLE import_jobs, customers, users RESTART IDENTITY CASCADE"
+            'TRUNCATE TABLE import_jobs, customers, users RESTART IDENTITY CASCADE'
         ))
     yield
 
 
-def rand_email(prefix="c") -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:8]}@test.com"
+def rand_email(prefix='c') -> str:
+    return f'{prefix}_{uuid.uuid4().hex[:8]}@test.com'
