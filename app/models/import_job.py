@@ -61,12 +61,17 @@ class ImportJob(Base):
         String(1024),
         nullable=True
     )
-    error_count: Mapped[Integer] = mapped_column(
+    error_count: Mapped[int] = mapped_column(
         Integer,
         default=0,
         nullable=False
     )
-    user_id = sa.Column(sa.UUID(as_uuid=True), nullable=False, index=True)
+    user_id = sa.Column(
+        sa.UUID(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     idempotency_key = sa.Column(sa.String(128), nullable=False)
     __table_args__ = (
         sa.UniqueConstraint('user_id',

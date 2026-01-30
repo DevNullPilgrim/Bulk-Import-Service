@@ -97,3 +97,25 @@ def make_failed_job_with_errors(client,
         client=client, token=user.token, job_id=job["id"])
     assert errors_url is not None
     return final, errors_url
+
+
+def create_two_imports_with_same_idem(client,
+                                      *,
+                                      token1: str,
+                                      token2: str,
+                                      idem: str, csv_bytes: bytes):
+    job_1 = create_import(
+        client=client,
+        token=token1,
+        idem_key=idem,
+        mode="insert_only",
+        csv_bytes=csv_bytes,
+    )
+    job_2 = create_import(
+        client=client,
+        token=token2,
+        idem_key=idem,
+        mode="insert_only",
+        csv_bytes=csv_bytes,
+    )
+    return job_1, job_2

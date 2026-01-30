@@ -5,7 +5,6 @@ from .conftest import (
     create_import,
     make_csv_bytes,
     rand_email,
-    wait_job_done
 )
 
 

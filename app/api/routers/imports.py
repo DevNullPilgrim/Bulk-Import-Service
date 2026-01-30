@@ -8,6 +8,7 @@ from fastapi import (
     HTTPException,
     Query,
     UploadFile,
+    Response,
 )
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
@@ -25,8 +26,9 @@ from app.storage.s3 import presing_get, put_bytes
 router = APIRouter(prefix='/imports', tags=['imports'])
 
 
-@router.post('')
+@router.post('', status_code=201)
 def create_import(
+    response: Response,
     mode: ImportMode = Query(ImportMode.insert_only),
     file: UploadFile = File(...),
     idempotency_key: str | None = Header(
@@ -49,6 +51,7 @@ def create_import(
     ).scalar_one_or_none()
 
     if existing:
+        response.status_code = 200
         return jsonable_encoder(job_to_dict(existing))
 
     data = file.file.read()
@@ -83,10 +86,18 @@ def create_import(
                 ImportJob.idempotency_key == idem,
             )
         ).scalar_one()
+        response.status_code = 200
         return jsonable_encoder(job_to_dict(existing))
 
     db.refresh(job)
-    celery_client.send_task('process_import', args=[str(job.id)])
+
+    try:
+        celery_client.send_task('process_import', args=[str(job.id)])
+    except Exception as errors:
+        job.status = JobStatus.failed
+        job.error = f'enqueue_failed: {type(errors).__name__}: {errors}'
+        db.commit()
+        raise HTTPException(status_code=503, detail='queue unavailable')
 
     return jsonable_encoder(job_to_dict(job))
 

@@ -28,6 +28,7 @@ def test_upsert_updates_existing_customer(client, user, db_engine):
         csv_bytes=csv2,
     )
     f2 = wait_job_done(client, token=user.token, job_id=j2['id'], timeout_s=60)
+    print(f'ВЫВОД: {f2}')
     assert f2['status'] == 'done'
 
     with db_engine.connect() as conn:
@@ -41,3 +42,32 @@ def test_upsert_updates_existing_customer(client, user, db_engine):
         cnt = conn.execute(
             text('SELECT count(*) FROM customers;')).scalar_one()
         assert cnt == 1
+
+
+# def test_upsert_inserts_new_customer(client, user, db_engine):
+#     email = f"new_{uuid.uuid4().hex}@test.com"
+
+#     csv1 = make_csv_bytes([[email, "First", "", "", "City1"]])
+#     j1 = create_import(
+#         client,
+#         token=user.token,
+#         idem_key="up_new-" + uuid.uuid4().hex[:8],
+#         mode="upsert",
+#         csv_bytes=csv1,
+#     )
+#     f1 = wait_job_done(client, token=user.token, job_id=j1["id"], timeout_s=60)
+#     assert f1["status"] == "done", f1
+
+#     with db_engine.connect() as conn:
+#         cnt = conn.execute(
+#             text("SELECT count(*) FROM customers WHERE email=:email"),
+#             {"email": email},
+#         ).scalar_one()
+#         assert cnt == 1
+
+#         row = conn.execute(
+#             text("SELECT first_name, city FROM customers WHERE email=:email"),
+#             {"email": email},
+#         ).one()
+#         assert row[0] == "First"
+#         assert row[1] == "City1

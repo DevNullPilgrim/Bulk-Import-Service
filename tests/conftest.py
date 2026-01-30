@@ -26,7 +26,6 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-
 # def _in_docker() -> bool:
 #     return os.path.exists('/.dockerenv')
 
@@ -232,6 +231,9 @@ def clean_db(db_engine):
     TRUNCATE import_jobs/customers/users с RESTART IDENTITY CASCADE.
     ВАЖНО: гоняй это на dev-стеке, иначе снесёшь реальные данные.
     """
+    env = os.getenv('APP_ENV')
+    if env not in ('dev', 'test'):
+        raise RuntimeError(f'Refusing to TRUNCATE DB when APP_ENV={env!r}')
     with db_engine.begin() as conn:
         conn.execute(text(
             'TRUNCATE TABLE import_jobs, customers, users RESTART IDENTITY CASCADE'
