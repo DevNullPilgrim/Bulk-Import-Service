@@ -4,18 +4,18 @@ from http import HTTPStatus
 from sqlalchemy import text
 
 from .conftest import (
+    auth_headers,
     make_csv_bytes,
     rewrite_presigned_for_container,
-    auth_headers
 )
 from .helpers import (
     create_and_wait,
+    create_import,
     download_errors_csv,
     make_failed_job_with_errors,
     rand_email,
     seed_customer,
     wait_job_done,
-    create_import
 )
 
 
