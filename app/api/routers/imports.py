@@ -21,7 +21,7 @@ from app.core.celery_client import celery_client
 from app.db.session import get_db
 from app.models.import_job import ImportJob, ImportMode, JobStatus
 from app.models.user import User
-from app.storage.s3 import presing_get, put_bytes
+from app.storage.s3 import presign_get, put_bytes
 
 router = APIRouter(prefix='/imports', tags=['imports'])
 
@@ -125,7 +125,7 @@ def get_import_errors(job_id: uuid.UUID,
             raise HTTPException(status_code=409, detail='Not ready.')
         raise HTTPException(status_code=404, detail='Error report.')
 
-    url = presing_get(
+    url = presign_get(
         job.error_report_object_key,
         expires_seconds=3600,
         download_filename=f'errors_{job.id}.csv'

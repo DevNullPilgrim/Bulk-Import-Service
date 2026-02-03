@@ -15,11 +15,11 @@ def get_current_user(db=Depends(get_db),
     try:
         payload = decode_token(token)
     except ValueError:
-        raise HTTPException(status_code=401, detail='Invalid_token')
+        raise HTTPException(status_code=401, detail='Invalid token')
 
     sub = payload.get('sub')
     if not sub:
-        raise HTTPException(status_code=401, detail='Invalid_token')
+        raise HTTPException(status_code=401, detail='Invalid token')
 
     user = db.get(User, uuid.UUID(sub))
     if not user:

@@ -20,7 +20,7 @@ def register(data: RegisterIn, db=Depends(get_db)):
                         .where(User.email == email)
                         ).scalar_one_or_none()
     if exists:
-        raise HTTPException(409, 'email alredy exists.')
+        raise HTTPException(409, 'email already exists.')
 
     user = User(email=email,
                 hashed_password=hash_password(data.password))

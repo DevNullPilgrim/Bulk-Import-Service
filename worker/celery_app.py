@@ -51,8 +51,8 @@ def iter_csv_rows(data: bytes) -> Iterator[list[str]]:
         yield from reader
 
 
-# def count_csv_rows(data: bytes) -> int:
-#     return sum(1 for _ in iter_csv_rows(data))
+def count_csv_rows(data: bytes) -> int:
+    return sum(1 for _ in iter_csv_rows(data))
 
 
 def _update_job(db, job_uuid: uuid.UUID, **fields) -> None:
@@ -139,33 +139,52 @@ class UpsertFlusher:
 
 
 class InsertOnlyFlusher:
-    def flush(self,
-              db,
-              buffer: BatchBuffer,
-              errors: list[str],
-              error_rows: list[ErrorRow]) -> None:
+    def flush(
+        self,
+        db,
+        buffer: BatchBuffer,
+        errors: list[str],
+        error_rows: list[ErrorRow],
+    ) -> None:
         if not buffer.rows:
             return
 
-        emails = [row['email'] for row in buffer.rows]
+        emails = [row["email"] for row in buffer.rows]
         existing = set(
-            db.execute(select(Customer.email).where(
-                Customer.email.in_(emails)))
+            db.execute(
+                select(Customer.email).where(Customer.email.in_(emails))
+            )
             .scalars()
             .all()
         )
 
-        if existing:
-            for payload, rn in zip(buffer.rows, buffer.row_nums):
-                email = payload['email']
-                if email in existing:
-                    msg = f'email already exists {email}'
-                    errors.append(f'row {rn}: {msg}')
-                    error_rows.append(ErrorRow(row=rn, error=msg, raw=email))
-            db.rollback()
-            return
+        to_insert: list[dict] = []
 
-        db.execute(pg_insert(Customer).values(buffer.rows))
+        for payload, rn in zip(buffer.rows, buffer.row_nums):
+            email = payload["email"]
+
+            if email in existing:
+                msg = f'email already exists "{email}"'
+
+                if len(errors) < 3:
+                    errors.append(f"row {rn}: {msg}")
+
+                raw = ",".join(
+                    [
+                        payload.get("email") or "",
+                        payload.get("first_name") or "",
+                        payload.get("last_name") or "",
+                        payload.get("phone") or "",
+                        payload.get("city") or "",
+                    ]
+                )
+                error_rows.append(ErrorRow(row=rn, error=msg, raw=raw))
+            else:
+                to_insert.append(payload)
+
+        if to_insert:
+            db.execute(pg_insert(Customer).values(to_insert))
+
         db.commit()
 
 
@@ -219,7 +238,7 @@ def process_csv(db,
     errors: list[str] = []
     error_rows: list[ErrorRow] = []
     error_count = 0
-    seen_emails: set[str] = set()  # дубли в файле
+    seen_emails: set[str] = set()
     buffer = BatchBuffer(BATCH_SIZE)
 
     for row_num, row in enumerate(iter_csv_rows(data), start=1):
@@ -272,7 +291,8 @@ def run_import(db, job_uuid: uuid.UUID, s3_key: str, mode: ImportMode) -> None:
                 error=None, processed_rows=0)
 
     data = get_bytes(s3_key)
-    _update_job(db, job_uuid, total_rows=0, processed_rows=0)
+    total = count_csv_rows(data=data)
+    _update_job(db, job_uuid, total_rows=total, processed_rows=0)
 
     flusher = get_flusher(mode)
     processed, errors, error_rows, error_count = process_csv(
@@ -291,7 +311,6 @@ def run_import(db, job_uuid: uuid.UUID, s3_key: str, mode: ImportMode) -> None:
         db,
         job_uuid,
         processed_rows=processed,
-        total_rows=processed,
         status=final_status,
         error=final_error,
         error_report_object_key=report_key,

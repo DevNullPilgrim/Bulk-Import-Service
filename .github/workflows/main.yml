@@ -1,4 +1,4 @@
-name: Balk service
+name: Bulk service
 
 on:
   pull_request:
