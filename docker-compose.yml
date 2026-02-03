@@ -55,7 +55,10 @@ services:
     restart: "no"
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
     env_file:
       - .env
     depends_on:
@@ -72,7 +75,11 @@ services:
       - .:/code
 
   worker:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+
     env_file:
       - .env
     depends_on:
