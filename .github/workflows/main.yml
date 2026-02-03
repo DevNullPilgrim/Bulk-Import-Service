@@ -13,6 +13,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
+      - name: Debug pwd and ls
+        run: |
+          pwd
+          ls -la
+          ls -la Dockerfile docker-compose.yml || true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
