@@ -1,3 +1,16 @@
+"""s3/MinIO helper.
+
+В проекте используется два URL:
+  - S3_ENDPOINT_URL: Внутрений адрес MinIO внутри docker-сети
+    (http://minio:9000).
+  - S3_PUBLIC_ENDPOINT_URL: адрес, который должен видеть клиент/хост
+    (http://localhost:9000).
+
+Важно: presigned URL подписывается под Publio endpoint, иначе ссылка будет
+    валидной но не доступной с хоста/браузера.
+Также put/get не полагаются на minio_init:
+    bucket гарантируется через ensure_bucket().
+"""
 import uuid
 
 import boto3
@@ -31,6 +44,12 @@ def _error_code(error: ClientError) -> str:
 
 
 def ensure_bucket(s3, bucket: str) -> None:
+    """Гарантирует наличие Bucker в S3.
+
+    В dev окружении допускается создание bucket на лету.
+    В проде обычно bucket создаётся отдельно,
+      но этот метод делает код устойчивым к гонкам старта.
+    """
     try:
         s3.head_bucket(Bucket=bucket)
         return
@@ -48,6 +67,10 @@ def put_bytes(data: bytes,
               *,
               filename: str,
               prefix: str = 'uploads') -> str:
+    """Загрудает bytes в S3 и возвращает ключ обьекта.
+
+    Побочные эффекты: может создать bucket (через ensure_bucket()).
+    """
     safe_name = (filename or 'upload.csv').replace('/', '_').replace('\\', '_')
     key = f'{prefix}/{uuid.uuid4()}_{safe_name}'
 
@@ -79,6 +102,11 @@ def presign_get(
         *,
         expires_seconds: int = 3600,
         download_filename: str | None = None,) -> str:
+    """Формирует presigned URL для скачивания объекта.
+
+    Подписывает ссылку под публичный endpoint (S3_PUBLIC_ENDPOINT_URL),
+    чтобы она работала с хоста/клиента, а не только внутри Docker.
+    """
     s3 = get_s3_client(public=True)
     params = {
         'Bucket': settings.s3_bucket,
