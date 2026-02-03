@@ -30,7 +30,7 @@ jobs:
         run: docker compose up -d --build
       
       - name: Run migration
-        run: docker compose exex -T api alembic upgrade head
+        run: docker compose exec -T api alembic upgrade head
 
       - name: Wait for API health
         run: |
