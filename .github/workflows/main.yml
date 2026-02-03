@@ -24,7 +24,10 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Prepare .env for CI
-        run:  cp .env.example .env
+        run: |
+          cp .env.example .env
+          sed -i 's|^S3_PUBLIC_ENDPOINT_URL=.*|S3_PUBLIC_ENDPOINT_URL=http://minio:9000|' .env || true
+          sed -i 's|^S3_ENDPOINT_URL=.*|S3_ENDPOINT_URL=http://minio:9000|' .env || true
 
       - name: Build & start services
         run: docker compose up -d --build
