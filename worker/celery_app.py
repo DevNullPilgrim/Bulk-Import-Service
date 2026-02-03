@@ -92,6 +92,12 @@ def parse_customer_row(row: list[str], row_num: int) -> tuple[dict | None, str |
 
 
 class BatchBuffer:
+    """Буфер строк для пакетной записи в БД.
+
+    rows: хранит подготовленные payload'ы для INSERT/UPSRT,
+    rows_nums: хранит номер строк исходного CSV (для errors.csv).
+    """
+
     def __init__(self, size: int):
         self.size = size
         self.rows: list[dict] = []
@@ -110,6 +116,12 @@ class BatchBuffer:
 
 
 class UpsertFlusher:
+    """Запись в режиме upsert.
+
+    Реализован через PostgreSQL INSERT ... ON CONFLICT(email) DO UPDATE.
+    Дубли в файле могут считаться ошибками.
+    """
+
     def flush(
         self,
         db,
@@ -138,6 +150,12 @@ class UpsertFlusher:
 
 
 class InsertOnlyFlusher:
+    """Запись в режиме Insert_only.
+
+    Правило: если email уже есть в БД или повторяется в самом файле:
+      строка попадает в errors, остальные строки вставляются.
+    """
+
     def flush(
         self,
         db,
