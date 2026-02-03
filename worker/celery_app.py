@@ -1,6 +1,5 @@
 import csv
 import io
-import os
 import time
 import uuid
 from typing import Iterator
@@ -28,9 +27,9 @@ app.conf.broker_connection_retry = True
 
 logger = get_task_logger(__name__)
 
-PROGRESS_EVERY = int(os.getenv('PROGRESS_EVERY', '50'))
-BATCH_SIZE = int(os.getenv('BATCH_SIZE', '500'))
-SLOW_MS = int(os.getenv('IMPORT_SLOW_MS', '0'))
+PROGRESS_EVERY = settings.progress_every
+BATCH_SIZE = settings.batch_size
+IMPORT_SLOW_MS = settings.import_slow_ms
 
 
 @app.task(name='ping')
@@ -288,8 +287,8 @@ def process_csv(db,
                 seen_emails.add(email)
                 buffer.add(payload, row_num)
 
-        if SLOW_MS:
-            time.sleep(SLOW_MS / 1000)
+        if IMPORT_SLOW_MS:
+            time.sleep(IMPORT_SLOW_MS / 1000)
 
         if processed % PROGRESS_EVERY == 0:
             _update_job(db, job_uuid, processed_rows=processed)

@@ -14,10 +14,17 @@ class Settings(BaseSettings):
     s3_bucket: str = 'imports'
     s3_region: str = 'us-east-1'
     s3_public_endpoint_url: str | None = None
+    s3_presign_ttl_seconds: int = 3600
 
-    jwt_secret: str = 'my_super_secret'
+    jwt_secret: str
     jwt_alg: str = 'HS256'
     jwt_access_ttl_seconds: int = 3600
+
+    batch_size: int = 500
+    progress_every: int = 50
+    import_slow_ms: int = 0
+
+    max_upload_bytes: int = 50 * 1024 * 1024
 
 
 settings = Settings()
