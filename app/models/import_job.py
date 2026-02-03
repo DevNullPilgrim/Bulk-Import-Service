@@ -22,6 +22,12 @@ class ImportMode(str, enum.Enum):
 
 
 class ImportJob(Base):
+    """Сущьность задачи импорта.
+
+    Хранит статус и прогресс выполнения, режим (insert_only/upsert),
+      а также ключи лбьктов в S3 (исходный файл и error.csv).
+    """
+
     __tablename__ = 'import_jobs'
 
     id: Mapped[uuid.UUID] = mapped_column(

@@ -30,7 +30,8 @@ from sqlalchemy.engine import Engine
 #     return os.path.exists('/.dockerenv')
 
 
-def rewrite_presigned_for_container(url: str | tuple[str, str | None]) -> tuple[str, str | None]:
+def rewrite_presigned_for_container(
+        url: str | tuple[str, str | None]) -> tuple[str, str | None]:
     """
     API отдаёт presigned URL под localhost:9000 (для браузера на хосте).
 
@@ -43,7 +44,9 @@ def rewrite_presigned_for_container(url: str | tuple[str, str | None]) -> tuple[
         return url
 
     parsed = urlparse(url)
-    if parsed.hostname in ("localhost", "127.0.0.1") and (parsed.port == 9000 or parsed.port is None):
+    if (
+            parsed.hostname in ("localhost", "127.0.0.1")
+            and (parsed.port == 9000 or parsed.port is None)):
         new_url = urlunparse(parsed._replace(
             netloc="host.docker.internal:9000"))
         return new_url, "localhost:9000"
