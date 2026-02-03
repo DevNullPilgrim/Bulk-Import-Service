@@ -1,3 +1,5 @@
+from http import HTTPStatus
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
@@ -15,12 +17,17 @@ router = APIRouter(prefix='/auth', tags=['auth'])
 
 @router.post('/register')
 def register(data: RegisterIn, db=Depends(get_db)):
+    """Регистрирует пользователя.
+
+    Email должен быть уникальным, пароль хранится в виде хэша.
+    """
     email = str(data.email).lower()
     exists = db.execute(select(User)
                         .where(User.email == email)
                         ).scalar_one_or_none()
     if exists:
-        raise HTTPException(409, 'email already exists.')
+        raise HTTPException(HTTPStatus.CONFLICT,
+                            'email already exists.')
 
     user = User(email=email,
                 hashed_password=hash_password(data.password))
@@ -32,11 +39,13 @@ def register(data: RegisterIn, db=Depends(get_db)):
 
 @router.post('/token', response_model=TokenOut)
 def token(data: LoginIn, db=Depends(get_db)):
+    """Выдает JWT access token по email/password."""
     email = str(data.email).lower()
     user = db.execute(select(User).where(
         User.email == email)).scalar_one_or_none()
     if not user or not verify_password(data.password, user.hashed_password):
-        raise HTTPException(401, 'bad credentials')
+        raise HTTPException(HTTPStatus.UNAUTHORIZED,
+                            'bad credentials')
 
     return {'access_token': create_access_token(sub=str(user.id)),
             'token_type': 'bearer'}
