@@ -5,7 +5,6 @@ import time
 import uuid
 from typing import Iterator
 
-import sqlalchemy as sa
 from celery import Celery
 from celery.utils.log import get_task_logger
 from sqlalchemy import select, update
@@ -149,7 +148,7 @@ class InsertOnlyFlusher:
         if not buffer.rows:
             return
 
-        emails = [row["email"] for row in buffer.rows]
+        emails = [row['email'] for row in buffer.rows]
         existing = set(
             db.execute(
                 select(Customer.email).where(Customer.email.in_(emails))
@@ -161,21 +160,21 @@ class InsertOnlyFlusher:
         to_insert: list[dict] = []
 
         for payload, rn in zip(buffer.rows, buffer.row_nums):
-            email = payload["email"]
+            email = payload['email']
 
             if email in existing:
                 msg = f'email already exists "{email}"'
 
                 if len(errors) < 3:
-                    errors.append(f"row {rn}: {msg}")
+                    errors.append(f'row {rn}: {msg}')
 
-                raw = ",".join(
+                raw = ','.join(
                     [
-                        payload.get("email") or "",
-                        payload.get("first_name") or "",
-                        payload.get("last_name") or "",
-                        payload.get("phone") or "",
-                        payload.get("city") or "",
+                        payload.get('email') or '',
+                        payload.get('first_name') or '',
+                        payload.get('last_name') or '',
+                        payload.get('phone') or '',
+                        payload.get('city') or '',
                     ]
                 )
                 error_rows.append(ErrorRow(row=rn, error=msg, raw=raw))
@@ -189,7 +188,9 @@ class InsertOnlyFlusher:
 
 
 def get_flusher(mode: ImportMode):
-    return InsertOnlyFlusher() if mode == ImportMode.insert_only else UpsertFlusher()
+    return (
+        InsertOnlyFlusher()
+        if mode == ImportMode.insert_only else UpsertFlusher())
 
 
 def _short_error_summary(errors_head: list[str],
