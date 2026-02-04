@@ -26,14 +26,10 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-# def _in_docker() -> bool:
-#     return os.path.exists('/.dockerenv')
-
 
 def rewrite_presigned_for_container(
         url: str | tuple[str, str | None]) -> tuple[str, str | None]:
-    """
-    API отдаёт presigned URL под localhost:9000 (для браузера на хосте).
+    """Отдаёт presigned URL под localhost:9000 (для браузера на хосте).
 
     Внутри контейнера localhost = контейнер, поэтому:
       - реально идём на host.docker.internal:9000
@@ -238,9 +234,14 @@ def clean_db(db_engine):
     if env not in ('dev', 'test'):
         raise RuntimeError(f'Refusing to TRUNCATE DB when APP_ENV={env!r}')
     with db_engine.begin() as conn:
-        conn.execute(text(
-            'TRUNCATE TABLE import_jobs, customers, users RESTART IDENTITY CASCADE'
-        ))
+        conn.execute(
+            text(
+                (
+                    "TRUNCATE TABLE import_jobs, customers, users "
+                    "RESTART IDENTITY CASCADE"
+                )
+            )
+        )
     yield
 
 

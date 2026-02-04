@@ -69,7 +69,8 @@ def _norm(s: str | None) -> str | None:
     return s or None
 
 
-def parse_customer_row(row: list[str], row_num: int) -> tuple[dict | None, str | None]:
+def parse_customer_row(row: list[str],
+                       row_num: int) -> tuple[dict | None, str | None]:
     if not row:
         return None, f'row {row_num}: empty row'
 

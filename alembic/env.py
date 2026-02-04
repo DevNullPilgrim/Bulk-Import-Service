@@ -3,9 +3,9 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-import app.models.customer
-import app.models.import_job
-import app.models.user
+import app.models.customer  # noqa: F401
+import app.models.import_job  # noqa: F401
+import app.models.user  # noqa: F401
 from app.core.config import settings
 from app.db.base import Base
 
